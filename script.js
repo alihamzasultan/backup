@@ -14,7 +14,7 @@ if (!sessionId) {
 
 async function sendQueryToServer(queryText) {
     try {
-        const response = await fetch('', {
+        const response = await fetch('https://animation-bot-production.up.railway.app/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
