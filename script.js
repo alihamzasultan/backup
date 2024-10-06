@@ -14,7 +14,7 @@ if (!sessionId) {
 
 async function sendQueryToServer(queryText) {
     try {
-        const response = await fetch('https://animation-bot-production.up.railway.app/', {
+        const response = await fetch('http://localhost:3000/chat', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
