@@ -1,33 +1,10 @@
+
 // Flag to track if chatbot is speaking
 let isSpeaking = false;
 let interruptDetected = false;
 
 // Function to handle sending query and receiving response
 // Generate a unique sessionId (you could use a UUID generator or any unique string)
-
-let messageQueue = [];
-let isProcessing = false;
-
-async function processQueue() {
-    if (isProcessing || messageQueue.length === 0) return;
-
-    isProcessing = true;
-    const message = messageQueue.shift();  // Get the first message in the queue
-
-    await sendQueryToServer(message);  // Send the message
-
-    isProcessing = false;
-    processQueue();  // Process the next message if available
-}
-
-function addMessageToQueue(message) {
-    messageQueue.push(message);
-    processQueue();  // Start processing the queue if not already processing
-}
-
-
-
-
 let sessionId = localStorage.getItem('chatSessionId');
 
 if (!sessionId) {
@@ -35,28 +12,23 @@ if (!sessionId) {
     localStorage.setItem('chatSessionId', sessionId); // Save it in localStorage to persist across page reloads
 }
 
-async function sendQueryToServerWithRetry(queryText, retries = 3) {
-    for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-            const response = await fetch('https://animation-bot-production.up.railway.app/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ queryText, sessionId }),
-            });
+async function sendQueryToServer(queryText) {
+    try {
+        const response = await fetch('http://localhost:3000/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ queryText, sessionId }), // Include sessionId in the request
+        });
 
-            const data = await response.json();
-            return data.response; // Return the response from the server
-        } catch (error) {
-            console.error(`Attempt ${attempt} failed:`, error);
-            if (attempt === retries) {
-                return "Something went wrong while communicating with the server.";
-            }
-        }
+        const data = await response.json();
+        return data.response; // Return the response from the server
+    } catch (error) {
+        console.error('Error:', error);
+        return "Something went wrong while communicating with the server.";
     }
 }
-
 
 
 // Get the video element
@@ -95,81 +67,123 @@ function getVoices() {
     return voices.find(voice => voice.name.toLowerCase().includes('female')) || voices[0]; // Fallback to first voice if no "female" voice found
 }
 
-// Function to handle chatbot response with interruption
-// Function to handle chatbot response with interruption
+let messageQueue = [];
+let isProcessing = false;
+
+// Function to enqueue the messages
+function enqueueMessage(message) {
+    messageQueue.push(message);
+    processNextMessage(); // Start processing if not already processing
+}
+
+// Function to process the next message in the queue
+async function processNextMessage() {
+    if (isProcessing || messageQueue.length === 0) return;  // Do nothing if already processing
+
+    isProcessing = true;  // Mark as processing
+
+    const message = messageQueue.shift();  // Get the next message
+
+    // Display user message
+    const chatOutput = document.getElementById('chat-output');
+    const userDiv = document.createElement('div');
+    userDiv.textContent = "👤 " + message;
+    chatOutput.appendChild(userDiv);
+
+    // Get chatbot reply
+    await chatbotReply(message);
+
+    isProcessing = false;  // Mark as done processing
+
+    // Process the next message in the queue
+    processNextMessage();
+}
+
+// Update the speech recognition event handler to enqueue messages
+recognition.onresult = function (event) {
+    let transcript = event.results[event.resultIndex][0].transcript.trim();
+    document.getElementById("chat-input").value = transcript;
+    enqueueMessage(transcript);  // Add the recognized speech to the queue
+};
+
+// Modify the chatbot reply function slightly to ensure smooth integration with the queue
 async function chatbotReply(userMessage) {
-  if (interruptDetected) return;  // If interrupt detected, do not proceed with chatbot response
+    if (interruptDetected) return;  // If interrupt detected, do not proceed with chatbot response
 
-  const chatOutput = document.getElementById('chat-output');
-  chatOutput.innerHTML = ''; // Clear previous messages
+    const chatOutput = document.getElementById('chat-output');
+    chatOutput.innerHTML = ''; // Clear previous messages
 
-  // Fetch response from the server
-  const text = await sendQueryToServer(userMessage);
+    // Fetch response from the server
+    const text = await sendQueryToServer(userMessage);
 
-  const newMessage = document.createElement('div');
-  newMessage.textContent = "😀 " + text;
-  chatOutput.appendChild(newMessage);
+    const newMessage = document.createElement('div');
+    newMessage.textContent = "😀 " + text;
+    chatOutput.appendChild(newMessage);
 
-  // Use speech synthesis for the chatbot's voice
-  let utterance = new SpeechSynthesisUtterance(text);
+    // Use speech synthesis for the chatbot's voice
+    let utterance = new SpeechSynthesisUtterance(text);
 
-  // Set voice to a female voice or adjust pitch/rate for effect
-  const femaleVoice = getVoices();
-  utterance.voice = femaleVoice;
-  utterance.pitch = 1.2;  // Slightly higher pitch (range: 0 - 2)
-  utterance.rate = 1.0;   // Normal speaking rate (range: 0.1 - 10)
+    // Set voice to a female voice or adjust pitch/rate for effect
+    const femaleVoice = getVoices();
+    utterance.voice = femaleVoice;
+    utterance.pitch = 1.2;  // Slightly higher pitch (range: 0 - 2)
+    utterance.rate = 1.0;   // Normal speaking rate (range: 0.1 - 10)
 
-  // Start the chatbot video when the chatbot starts speaking
-  utterance.onstart = function () {
-      changeVideo('video.mp4'); // Change to the chatbot interaction video
-      isSpeaking = true; // Chatbot starts speaking
-      interruptDetected = false; // Reset interrupt flag
-  };
+    // Start the chatbot video when the chatbot starts speaking
+    utterance.onstart = function () {
+        changeVideo('video.mp4'); // Change to the chatbot interaction video
+        isSpeaking = true; // Chatbot starts speaking
+        interruptDetected = false; // Reset interrupt flag
+    };
 
-  // Stop the chatbot video and switch back to the default video when speech ends
-  utterance.onend = function () {
-      changeVideo(defaultVideoPath); // Change back to the default video
-      isSpeaking = false; // Chatbot stops speaking
-  };
+    // Stop the chatbot video and switch back to the default video when speech ends
+    utterance.onend = function () {
+        changeVideo(defaultVideoPath); // Change back to the default video
+        isSpeaking = false; // Chatbot stops speaking
 
-  speechSynthesis.speak(utterance);
+        // Process the next message if any
+        processNextMessage();
+    };
+
+    speechSynthesis.speak(utterance);
 }
 
+
 // Function to handle user interruptions
 // Function to handle user interruptions
-let debounceTimer;
 function handleInterruption() {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-        if (isSpeaking && !interruptDetected) {
-            interruptDetected = true;
-            speechSynthesis.cancel();
-            changeVideo(defaultVideoPath);
-            
-            setTimeout(() => {
-                let hardcodedUtterance = new SpeechSynthesisUtterance("Excuse me, you were saying something? Can you repeat again?");
-                hardcodedUtterance.voice = getVoices();
-                hardcodedUtterance.pitch = 1.2;
-                hardcodedUtterance.rate = 1.0;
-                
-                hardcodedUtterance.onstart = function () {
-                    changeVideo('video.mp4');
-                    isSpeaking = true;
-                };
-                
-                hardcodedUtterance.onend = function () {
-                    changeVideo(defaultVideoPath);
-                    interruptDetected = false;
-                    isSpeaking = false;
-                    recognition.start(); // Restart listening
-                };
-                
-                speechSynthesis.speak(hardcodedUtterance);
-            }, 2000); // 2 seconds delay
-        }
-    }, 500); // Debounce timer to prevent frequent interruptions
-}
+  if (isSpeaking && !interruptDetected) {
+      interruptDetected = true;  // Mark that an interruption is detected
+      speechSynthesis.cancel();  // Stop current speech
 
+      // Change to default video for 2 seconds
+      changeVideo(defaultVideoPath);
+
+      setTimeout(() => {
+          // Play hardcoded message "DID YOU SAY ANYTHING?"
+          let hardcodedUtterance = new SpeechSynthesisUtterance("Excuse me, you were saying something? Can you repeat again?");
+          hardcodedUtterance.voice = getVoices();
+          hardcodedUtterance.pitch = 1.2;
+          hardcodedUtterance.rate = 1.0;
+
+          hardcodedUtterance.onstart = function () {
+              changeVideo('video.mp4');
+              isSpeaking = true;  // Ensure the flag is set properly
+          };
+
+          hardcodedUtterance.onend = function () {
+              changeVideo(defaultVideoPath); // Switch back to the default video after message
+              interruptDetected = false;  // Reset interruption detection
+              isSpeaking = false;  // Reset speaking flag
+              recognizing = false; recognition.start(); // Automatically start listening
+              toggleMic(); // Start listening again
+
+          };
+
+          speechSynthesis.speak(hardcodedUtterance);
+      }, 2000); // 2 seconds delay
+  }
+}
 
 // Modified to handle user input and chatbot response with interruption check
 document.getElementById('send-button').addEventListener('click', async function () {
@@ -228,42 +242,32 @@ function toggleMic() {
     }
 
     // Handle recognition end (restart unless stopped manually)
-    recognition.onend = function () {
+    recognition.onend = () => {
         if (recognizing) {
             console.log('Recognition ended, restarting...');
-            recognition.start();  // Restart recognition automatically if it should keep listening
+            recognition.start(); // Automatically restart if still listening
         } else {
             console.log('Recognition stopped manually.');
         }
     };
-    
 
     // Handle recognition errors
-    let retryCount = 0;
-    const maxRetries = 5;
-    
-    recognition.onerror = function (event) {
-        console.log('Recognition error:', event.error);
-        recognizing = false;
-    
-        if (event.error === 'network' || event.error === 'no-speech') {
-            recognition.start();  // Restart recognition if appropriate
-        }
-    };
-
-    recognition.onerror = function (event) {
-        if (event.error === 'not-allowed') {
+    recognition.onerror = (event) => {
+        if (event.error === 'no-speech') {
+            console.log('No speech detected. Restarting...');
+            if (recognizing) recognition.start(); // Restart if no speech is detected
+        } else if (event.error === 'not-allowed') {
             console.error('Permission to use microphone not granted.');
-            alert('Please allow microphone access.');
         } else if (event.error === 'network') {
             console.error('Network error. Please check your connection.');
         } else {
             console.error('Speech recognition error:', event.error);
+            recognition.stop();
+            recognizing = false;
+            document.getElementById('micButton').textContent = 'Start Listening';
+            listeningAnimation.style.display = 'none';
         }
     };
-    
-    
-    
 }
 
 
@@ -279,10 +283,9 @@ if ('webkitSpeechRecognition' in window) {
     recognition.onresult = function (event) {
         let transcript = event.results[event.resultIndex][0].transcript.trim();
         document.getElementById("chat-input").value = transcript;
-        document.getElementById('chat-output').innerHTML += `<p>User: ${transcript}</p>`;
-    
-        // Add the captured message to the queue for processing
-        addMessageToQueue(transcript);
+        let message = transcript; // Captured message
+        document.getElementById('chat-output').innerHTML += `<p>User: ${message}</p>`;
+
         // Simulate clicking the send button to handle chatbot response
         document.getElementById('send-button').click();
     };
