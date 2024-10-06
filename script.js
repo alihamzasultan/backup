@@ -184,78 +184,59 @@ const micButton = document.getElementById('mic-button');
 // Function to toggle the microphone and start speech recognition after interruption
 let recognizing = false;
 
-let recognitionTimeout; // To hold the timeout
+function toggleMic() {
+    const listeningAnimation = document.getElementById('listening-animation');
 
-function startRecognitionWithTimeout() {
-    recognition.start();
-    recognizing = true;
-    document.getElementById('micButton').textContent = 'Stop Listening';
-    listeningAnimation.style.display = 'block'; // Show animation
-
-    // Set a timeout for the recognition (e.g., 10 seconds)
-    recognitionTimeout = setTimeout(() => {
-        if (recognizing) {
-            console.log('No audio detected within time limit. Stopping...');
-            recognition.stop();  // Stop recognition if no speech is detected
-            recognizing = false;
-            document.getElementById('micButton').textContent = 'Start Listening';
-            listeningAnimation.style.display = 'none';
-            alert('No audio detected. Please try again.');
+    if (recognizing) {
+        recognition.stop(); // Manually stop recognition
+        recognizing = false;
+        micButton.textContent = 'Start Listening';
+        listeningAnimation.style.display = 'none'; // Hide animation
+    } else {
+        try {
+            recognition.start();
+            recognizing = true;
+            micButton.textContent = 'Stop Listening';
+            listeningAnimation.style.display = 'block'; // Show animation
+        } catch (error) {
+            console.error('Error starting microphone:', error);
+            alert('Unable to start microphone. Please check your permissions and try again.');
+            micButton.textContent = 'Start Listening';
         }
-    }, 10000);  // Adjust the timeout duration (e.g., 10 seconds)
+    }
+
+    // Handle recognition end (restart unless stopped manually)
+    recognition.onend = () => {
+        if (recognizing) {
+            console.log('Recognition ended, restarting...');
+            recognition.start(); // Automatically restart if still listening
+        } else {
+            console.log('Recognition stopped manually.');
+        }
+    };
+
+    // Handle recognition errors
+    recognition.onerror = (event) => {
+        if (event.error === 'no-speech') {
+            console.log('No speech detected. Restarting...');
+            if (recognizing) recognition.start(); // Restart if no speech is detected
+        } else if (event.error === 'not-allowed') {
+            console.error('Permission to use microphone not granted.');
+            alert('Microphone access denied. Please enable it in your browser settings.');
+        } else if (event.error === 'network') {
+            console.error('Network error. Please check your connection.');
+            alert('Network error. Please ensure you have a stable internet connection.');
+        } else {
+            console.error('Speech recognition error:', event.error);
+            recognition.stop();
+            recognizing = false;
+            micButton.textContent = 'Start Listening';
+            listeningAnimation.style.display = 'none';
+            alert(`An error occurred with speech recognition: ${event.error}`);
+        }
+    };
 }
 
-// Call this function when starting speech recognition
-toggleMic = () => {
-    if (recognizing) {
-        clearTimeout(recognitionTimeout); // Clear the timeout if it's already set
-        recognition.stop();
-        recognizing = false;
-        document.getElementById('micButton').textContent = 'Start Listening';
-        listeningAnimation.style.display = 'none';
-    } else {
-        startRecognitionWithTimeout();
-    }
-
-
-    
-};
-
-
-recognition.onerror = (event) => {
-    console.error('Speech recognition error:', event.error);
-
-    if (event.error === 'no-speech') {
-        console.log('No speech detected. Prompting user to try again.');
-        alert('No speech detected. Please speak again.');
-    } else if (event.error === 'network') {
-        alert('Network error. Please check your connection.');
-    } else if (event.error === 'not-allowed') {
-        alert('Permission to use the microphone was denied.');
-    }
-
-    // Reset the recognition state and UI in case of any error
-    recognizing = false;
-    document.getElementById('micButton').textContent = 'Start Listening';
-    listeningAnimation.style.display = 'none';
-
-    // Optional: Restart the recognition if the error is recoverable
-    if (event.error === 'no-speech' || event.error === 'network') {
-        startRecognitionWithTimeout(); // Automatically restart after failure
-    }
-};
-
-
-recognition.onerror = (event) => {
-    console.error('Speech recognition error:', event.error);
-    
-    // Display the retry button on certain errors
-    if (event.error === 'no-speech' || event.error === 'network') {
-        document.getElementById('retry-button').style.display = 'block';
-    }
-    
-    // Other error handling logic...
-};
 
 
 let recognition;
