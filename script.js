@@ -14,7 +14,7 @@ if (!sessionId) {
 
 async function sendQueryToServer(queryText) {
     try {
-        const response = await fetch('https://animation-bot-production.up.railway.app/', {
+        const response = await fetch('http://localhost:3000/chat', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -67,87 +67,45 @@ function getVoices() {
     return voices.find(voice => voice.name.toLowerCase().includes('female')) || voices[0]; // Fallback to first voice if no "female" voice found
 }
 
-let messageQueue = [];
-let isProcessing = false;
-
-// Function to enqueue the messages
-function enqueueMessage(message) {
-    messageQueue.push(message);
-    processNextMessage(); // Start processing if not already processing
-}
-
-// Function to process the next message in the queue
-async function processNextMessage() {
-    if (isProcessing || messageQueue.length === 0) return;  // Do nothing if already processing
-
-    isProcessing = true;  // Mark as processing
-
-    const message = messageQueue.shift();  // Get the next message
-
-    // Display user message
-    const chatOutput = document.getElementById('chat-output');
-    const userDiv = document.createElement('div');
-    userDiv.textContent = "👤 " + message;
-    chatOutput.appendChild(userDiv);
-
-    // Get chatbot reply
-    await chatbotReply(message);
-
-    isProcessing = false;  // Mark as done processing
-
-    // Process the next message in the queue
-    processNextMessage();
-}
-
-// Update the speech recognition event handler to enqueue messages
-recognition.onresult = function (event) {
-    let transcript = event.results[event.resultIndex][0].transcript.trim();
-    document.getElementById("chat-input").value = transcript;
-    enqueueMessage(transcript);  // Add the recognized speech to the queue
-};
-
-// Modify the chatbot reply function slightly to ensure smooth integration with the queue
+// Function to handle chatbot response with interruption
+// Function to handle chatbot response with interruption
 async function chatbotReply(userMessage) {
-    if (interruptDetected) return;  // If interrupt detected, do not proceed with chatbot response
+  if (interruptDetected) return;  // If interrupt detected, do not proceed with chatbot response
 
-    const chatOutput = document.getElementById('chat-output');
-    chatOutput.innerHTML = ''; // Clear previous messages
+  const chatOutput = document.getElementById('chat-output');
+  chatOutput.innerHTML = ''; // Clear previous messages
 
-    // Fetch response from the server
-    const text = await sendQueryToServer(userMessage);
+  // Fetch response from the server
+  const text = await sendQueryToServer(userMessage);
 
-    const newMessage = document.createElement('div');
-    newMessage.textContent = "😀 " + text;
-    chatOutput.appendChild(newMessage);
+  const newMessage = document.createElement('div');
+  newMessage.textContent = "😀 " + text;
+  chatOutput.appendChild(newMessage);
 
-    // Use speech synthesis for the chatbot's voice
-    let utterance = new SpeechSynthesisUtterance(text);
+  // Use speech synthesis for the chatbot's voice
+  let utterance = new SpeechSynthesisUtterance(text);
 
-    // Set voice to a female voice or adjust pitch/rate for effect
-    const femaleVoice = getVoices();
-    utterance.voice = femaleVoice;
-    utterance.pitch = 1.2;  // Slightly higher pitch (range: 0 - 2)
-    utterance.rate = 1.0;   // Normal speaking rate (range: 0.1 - 10)
+  // Set voice to a female voice or adjust pitch/rate for effect
+  const femaleVoice = getVoices();
+  utterance.voice = femaleVoice;
+  utterance.pitch = 1.2;  // Slightly higher pitch (range: 0 - 2)
+  utterance.rate = 1.0;   // Normal speaking rate (range: 0.1 - 10)
 
-    // Start the chatbot video when the chatbot starts speaking
-    utterance.onstart = function () {
-        changeVideo('video.mp4'); // Change to the chatbot interaction video
-        isSpeaking = true; // Chatbot starts speaking
-        interruptDetected = false; // Reset interrupt flag
-    };
+  // Start the chatbot video when the chatbot starts speaking
+  utterance.onstart = function () {
+      changeVideo('video.mp4'); // Change to the chatbot interaction video
+      isSpeaking = true; // Chatbot starts speaking
+      interruptDetected = false; // Reset interrupt flag
+  };
 
-    // Stop the chatbot video and switch back to the default video when speech ends
-    utterance.onend = function () {
-        changeVideo(defaultVideoPath); // Change back to the default video
-        isSpeaking = false; // Chatbot stops speaking
+  // Stop the chatbot video and switch back to the default video when speech ends
+  utterance.onend = function () {
+      changeVideo(defaultVideoPath); // Change back to the default video
+      isSpeaking = false; // Chatbot stops speaking
+  };
 
-        // Process the next message if any
-        processNextMessage();
-    };
-
-    speechSynthesis.speak(utterance);
+  speechSynthesis.speak(utterance);
 }
-
 
 // Function to handle user interruptions
 // Function to handle user interruptions
@@ -226,50 +184,78 @@ const micButton = document.getElementById('mic-button');
 // Function to toggle the microphone and start speech recognition after interruption
 let recognizing = false;
 
-function toggleMic() {
-    const listeningAnimation = document.getElementById('listening-animation');
+let recognitionTimeout; // To hold the timeout
 
-    if (recognizing) {
-        recognition.stop(); // Manually stop recognition
-        recognizing = false;
-        document.getElementById('micButton').textContent = 'Start Listening';
-        listeningAnimation.style.display = 'none'; // Hide animation
-    } else {
-        recognition.start();
-        recognizing = true;
-        document.getElementById('micButton').textContent = 'Stop Listening';
-        listeningAnimation.style.display = 'block'; // Show animation
-    }
+function startRecognitionWithTimeout() {
+    recognition.start();
+    recognizing = true;
+    document.getElementById('micButton').textContent = 'Stop Listening';
+    listeningAnimation.style.display = 'block'; // Show animation
 
-    // Handle recognition end (restart unless stopped manually)
-    recognition.onend = () => {
+    // Set a timeout for the recognition (e.g., 10 seconds)
+    recognitionTimeout = setTimeout(() => {
         if (recognizing) {
-            console.log('Recognition ended, restarting...');
-            recognition.start(); // Automatically restart if still listening
-        } else {
-            console.log('Recognition stopped manually.');
-        }
-    };
-
-    // Handle recognition errors
-    recognition.onerror = (event) => {
-        if (event.error === 'no-speech') {
-            console.log('No speech detected. Restarting...');
-            if (recognizing) recognition.start(); // Restart if no speech is detected
-        } else if (event.error === 'not-allowed') {
-            console.error('Permission to use microphone not granted.');
-        } else if (event.error === 'network') {
-            console.error('Network error. Please check your connection.');
-        } else {
-            console.error('Speech recognition error:', event.error);
-            recognition.stop();
+            console.log('No audio detected within time limit. Stopping...');
+            recognition.stop();  // Stop recognition if no speech is detected
             recognizing = false;
             document.getElementById('micButton').textContent = 'Start Listening';
             listeningAnimation.style.display = 'none';
+            alert('No audio detected. Please try again.');
         }
-    };
+    }, 10000);  // Adjust the timeout duration (e.g., 10 seconds)
 }
 
+// Call this function when starting speech recognition
+toggleMic = () => {
+    if (recognizing) {
+        clearTimeout(recognitionTimeout); // Clear the timeout if it's already set
+        recognition.stop();
+        recognizing = false;
+        document.getElementById('micButton').textContent = 'Start Listening';
+        listeningAnimation.style.display = 'none';
+    } else {
+        startRecognitionWithTimeout();
+    }
+
+
+    
+};
+
+
+recognition.onerror = (event) => {
+    console.error('Speech recognition error:', event.error);
+
+    if (event.error === 'no-speech') {
+        console.log('No speech detected. Prompting user to try again.');
+        alert('No speech detected. Please speak again.');
+    } else if (event.error === 'network') {
+        alert('Network error. Please check your connection.');
+    } else if (event.error === 'not-allowed') {
+        alert('Permission to use the microphone was denied.');
+    }
+
+    // Reset the recognition state and UI in case of any error
+    recognizing = false;
+    document.getElementById('micButton').textContent = 'Start Listening';
+    listeningAnimation.style.display = 'none';
+
+    // Optional: Restart the recognition if the error is recoverable
+    if (event.error === 'no-speech' || event.error === 'network') {
+        startRecognitionWithTimeout(); // Automatically restart after failure
+    }
+};
+
+
+recognition.onerror = (event) => {
+    console.error('Speech recognition error:', event.error);
+    
+    // Display the retry button on certain errors
+    if (event.error === 'no-speech' || event.error === 'network') {
+        document.getElementById('retry-button').style.display = 'block';
+    }
+    
+    // Other error handling logic...
+};
 
 
 let recognition;
